@@ -5,23 +5,28 @@ import pprint
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
+from scipy import signal
 import brainflow
-from brainflow.board_shim import BoardIds, BrainFlowInputParams, BoardShim
+from brainflow.board_shim import BrainFlowInputParams, BoardShim
 from brainflow.data_filter import DataFilter
+
+# --- Session setup ---
+
+session_class = "left"  # motor imagey class for this session
 
 # main directory
 main_dir = os.getcwd()
+# eeg data directory
+eeg_dir = os.path.join(main_dir, "eeg_data", str(session_class))
+
+# --- EEG headset setup ---
 
 # OpenBCI Cyton board
 cyton_board_ID = 0
-print("\n" + str(BoardIds(cyton_board_ID)))  
-
 # serial connection
 serial_port = 'COM3'
 params = BrainFlowInputParams()
 params.serial_port = serial_port
-
 # create board
 board = BoardShim(board_id=cyton_board_ID, input_params=params)
 
@@ -30,67 +35,129 @@ board_name = board.get_device_name(board_id=board.board_id)
 channel_names = board.get_eeg_names(board_id=board.board_id)
 samp_freq = board.get_sampling_rate(board_id=board.board_id)  # 250 Hz
 eeg_channel_idx = board.get_eeg_channels(board_id=board.board_id)  # EEG channel indices (1-8)
+timestamp_channel = board.get_timestamp_channel(board_id=board.board_id)
+num_eeg_channels = len(channel_names)
 
-# prepare the board for data stream
-board.prepare_session()
-print("Session ready.")
+def main():
+    num_sec = 8  # number of seconds to record
+    all_data = get_bci_data(num_sec=num_sec)
+    raw_eeg = all_data[eeg_channel_idx, 2*samp_freq:(num_sec-1)*samp_freq]  # artifactual eeg data removed, uniform size
+    filtered_eeg = eeg_process(eeg_data=raw_eeg, notch=True, hp=False)
 
-# start data stream
-board.start_stream()
-print("Streaming data...")
+    df = pd.DataFrame(np.transpose(filtered_eeg))
+    df = df/1000  # uV to mV
+    df.plot(subplots=True)
+    plt.show()
+    #plt.savefig('after_processing.png')
 
-# initial timestamp
-timestamp = time.time()
-# number of seconds to record
-time.sleep(60)
+    save = str(input("Save recorded data? [y]/[n]\n"))
+    if save == "y":
+        save_data(dir=eeg_dir, all_data=all_data, raw_eeg=raw_eeg, filtered_eeg=filtered_eeg)
+    else:
+        pass
 
-# get all data
-data = board.get_board_data()  
+# --- EEG data acquisition ---
+def get_bci_data(num_sec):
+    # prepare the board for data stream
+    board.prepare_session()
+    print("\nSession ready.")
+    print("--------------")
+    time.sleep(1)
+    for i in range(3):
+        print(f"Session beginning in {3-i}")
+        time.sleep(1)
+    # start data stream
+    board.start_stream()
+    print(f"Recording {num_sec} seconds of data...")
 
-# stop the data stream
-board.stop_stream()
-board.release_session()
+    # number of seconds to record
+    time.sleep(num_sec)
 
-# eeg data directory
-eeg_dir = os.path.join(main_dir, "raw_eeg_data")
+    # get all data
+    all_data = board.get_board_data() 
+    # stop the data stream
+    board.stop_stream()
+    board.release_session()
+    print("Session ended.\n")
 
-# save recorded eeg data
-filename = str(timestamp) + '.csv'
-os.chdir(eeg_dir)
-DataFilter.write_file(data, filename, 'w')
+    return all_data 
 
-# read data from saved file
-read_data = DataFilter.read_file(filename)
-read_df = pd.DataFrame(np.transpose(read_data))
-os.chdir(main_dir)
-filepath = os.path.join(eeg_dir, filename)
+# --- EEG processing ---
+def eeg_process(eeg_data, notch=True, hp=True):
+    eeg_channel_data = []
+    coeff_b, coeff_a = signal.iirnotch(w0=60, Q=30, fs=samp_freq)     # 60 Hz notch filter
+    coeff_b2, coeff_a2 = signal.iirnotch(w0=120, Q=30, fs=samp_freq)  # 120 Hz notch filter
+    sos = signal.butter(N=4, Wn=0.5, btype="highpass", analog=False, output="sos", fs=samp_freq)  # highpass filter
 
-all_raw_data = np.loadtxt(filepath, delimiter=',')
-raw_eeg_data = np.transpose(all_raw_data[:, eeg_channel_idx])
-print(np.shape(raw_eeg_data))
-scaled_eeg_data = raw_eeg_data/1000000  # uV to V
-#resampled_eeg_data = mne.filter.resample(scaled_eeg_data, down=samp_freq/128)
-test_bp = mne.filter.filter_data(scaled_eeg_data, sfreq=samp_freq, h_freq=123, l_freq=0.5)
+    for i in range(num_eeg_channels):
+        eeg_i = eeg_data[i, :]
+        if notch:
+            eeg_i = signal.filtfilt(coeff_b, coeff_a, eeg_i)    # notch filter
+            eeg_i = signal.filtfilt(coeff_b2, coeff_a2, eeg_i)  # notch filter
+        if hp:
+            eeg_i = signal.sosfilt(sos, eeg_i)  # highpass filter
+        eeg_channel_data.append(eeg_i)
+
+    filtered_eeg = np.asarray(eeg_channel_data)
+
+    return filtered_eeg
+
+# --- Data saving ---
+def save_data(dir, all_data, raw_eeg, filtered_eeg):
+    # --- Save all data ---
+    initial_timestamp = all_data[timestamp_channel, 0]
+    filename = str(initial_timestamp) + '_all' + '.txt'
+    os.chdir(dir)
+    print("\nSaving data in " + str(os.getcwd()))
+    DataFilter.write_file(all_data, filename, 'w')
+    print("All data saved.")
+
+    # --- Save raw EEG data ---
+
+    filename = str(initial_timestamp) + '_eeg' + '.txt'
+    DataFilter.write_file(raw_eeg, filename, 'w')
+    print("EEG data saved.")
+
+    # --- Save processed EEG data ---
+
+    filename = str(initial_timestamp) + '_eeg_filtered' + '.txt'
+    DataFilter.write_file(filtered_eeg, filename, 'w')
+    print("Filtered EEG data saved.")
+
+    os.chdir(main_dir)
+
+if __name__ == "__main__":
+    main()
+
+# --- EEG timeseries plot ---
+"""
+df = pd.DataFrame(np.transpose(raw_eeg))
+df = df/1000  # uV to mV
+plt.figure()
+df.plot(subplots=True)
+plt.savefig('before_processing.png')
+
+df = pd.DataFrame(np.transpose(filtered_eeg))
+df = df/1000  # uV to mV
+plt.figure()
+df.plot(subplots=True)
+plt.savefig('after_processing.png')
+"""
+
+# --- EEG PSD plot ---
+
+"""
+# create the info structure needed by MNE
+info = mne.create_info(channel_names, samp_freq, ch_types='eeg')
+# create Raw object
+raw = mne.io.RawArray(filtered_eeg, info)
+# plot PSD
+raw.plot_psd(fmax=samp_freq/2, average=True)
 
 # create the info structure needed by MNE
 info = mne.create_info(channel_names, samp_freq, ch_types='eeg')
 # create Raw object
-#raw = mne.io.RawArray(raw_eeg_data, info)
-raw = mne.io.RawArray(scaled_eeg_data, info)
-#raw = mne.io.RawArray(resampled_eeg_data, info)
-raw = mne.io.RawArray(test_bp, info)
-
-# notch filtering
-notch_freqs = (60, 120)
-#scaled_notched = raw.copy().notch_filter(freqs=notch_freqs, notch_widths=0.5)
-scaled_notched = raw.copy().notch_filter(freqs=notch_freqs)
-#scaled_filtered = scaled_notched.copy().filter_data(h_freq=0.5)
-
-# plot eeg data
-scaled_notched.plot(block=True)
-scaled_notched.plot_psd(fmax=samp_freq/2, average=True)
-
-# plot eeg data
-#raw.plot(block=True)
-#raw.plot_psd(fmax=samp_freq/2)
-
+raw = mne.io.RawArray(raw_eeg, info)
+# plot PSD
+raw.plot_psd(fmax=samp_freq/2, average=True)
+"""
