@@ -12,7 +12,7 @@ from brainflow.data_filter import DataFilter
 
 # --- Session setup ---
 
-session_class = "left"  # motor imagey class for this session
+session_class = "right"  # motor imagey class for this session
 
 # main directory
 main_dir = os.getcwd()
