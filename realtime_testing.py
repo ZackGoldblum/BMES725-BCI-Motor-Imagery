@@ -9,6 +9,7 @@ from scipy import signal
 import brainflow
 from brainflow.board_shim import BrainFlowInputParams, BoardShim
 from brainflow.data_filter import DataFilter
+import tensorflow as tf
 
 # --- Session setup ---
 
@@ -17,7 +18,9 @@ session_class = "right"  # motor imagery class for this session
 # main directory
 main_dir = os.getcwd()
 # eeg data directory
-eeg_dir = os.path.join(main_dir, "eeg_data", str(session_class))
+eeg_dir = os.path.join(main_dir, "eeg_data")
+# eeg class directory
+eeg_class_dir = os.path.join(main_dir, "eeg_data", str(session_class))
 
 # --- EEG headset setup ---
 
@@ -38,23 +41,11 @@ eeg_channel_idx = board.get_eeg_channels(board_id=board.board_id)  # EEG channel
 timestamp_channel = board.get_timestamp_channel(board_id=board.board_id)
 num_eeg_channels = len(channel_names)
 
-def main():
-    num_sec = 8  # number of seconds to record
-    all_data = get_bci_data(num_sec=num_sec)
-    raw_eeg = all_data[eeg_channel_idx, 2*samp_freq:(num_sec-1)*samp_freq]  # artifactual eeg data removed, uniform size
-    filtered_eeg = eeg_process(eeg_data=raw_eeg, notch=True, hp=False)
+# --- ML model ---
 
-    df = pd.DataFrame(np.transpose(filtered_eeg))
-    df = df/1000  # uV to mV
-    df.plot(subplots=True)
-    plt.show()
-    #plt.savefig('after_processing.png')
-
-    save = str(input("Save recorded data? [y]/[n]\n"))
-    if save == "y":
-        save_data(dir=eeg_dir, all_data=all_data, raw_eeg=raw_eeg, filtered_eeg=filtered_eeg)
-    else:
-        pass
+model_name = "88.89-acc_50-epochs_10-batchsize_1622249514.model"
+model_path = os.path.join("models", model_name)
+model = tf.keras.models.load_model(model_path)
 
 # --- EEG data acquisition ---
 def get_bci_data(num_sec):
@@ -126,38 +117,53 @@ def save_data(dir, all_data, raw_eeg, filtered_eeg):
 
     os.chdir(main_dir)
 
+def to_one_sec(eeg_data, num_sec=5, samp_freq=250):
+    one_sec_data = []
+    for i in range(num_sec):
+        eeg_data_i = eeg_data[i*samp_freq:(i+1)*samp_freq]
+        one_sec_data.append(eeg_data_i)
+
+    return one_sec_data
+
+def main():
+    num_sec = 8  # number of seconds to record
+    all_data = get_bci_data(num_sec=num_sec)
+    raw_eeg = all_data[eeg_channel_idx, 2*samp_freq:(num_sec-1)*samp_freq]  # artifactual eeg data removed, uniform size
+    filtered_eeg = eeg_process(eeg_data=raw_eeg, notch=True, hp=False)
+    filtered_eegT = np.transpose(filtered_eeg)
+
+    one_sec_list = to_one_sec(eeg_data=filtered_eegT, num_sec=5, samp_freq=samp_freq)
+    predict_list = []
+
+    for i in range(len(one_sec_list)):  # for each 1 second trial
+        one_sec_data = one_sec_list[i]              # (250, 8) eeg data
+        one_sec_dataT = np.transpose(one_sec_data)  # (8, 250) eeg data  
+        
+        eeg_predict = one_sec_dataT.reshape(1, 8, 250)
+        predict_vec = model.predict(eeg_predict)[0]
+        predict_list.append(predict_vec)
+        #print(predict_vec)
+
+    predict_avgs = [round(sum(x) / len(x) * 100, 2) for x in zip(*predict_list)] 
+    #print(predict_avgs)
+    left_pred = predict_avgs[0]
+    right_pred = predict_avgs[1]
+    none_pred = predict_avgs[2]
+
+    print(f"Actual MI class\n---------------\n{session_class.title()}\n")
+    print(f"Predicted MI class\n------------------\nLeft:  {left_pred} %\nRight: {right_pred} %\nNone:  {none_pred} %\n")
+
+    df = pd.DataFrame(np.transpose(filtered_eeg))
+    df = df/1000  # uV to mV
+    df.plot(subplots=True)
+    plt.show()
+    #plt.savefig('after_processing.png')
+
+    save = str(input("Save recorded data? [y]/[n]\n"))
+    if save == "y":
+        save_data(dir=eeg_class_dir, all_data=all_data, raw_eeg=raw_eeg, filtered_eeg=filtered_eeg)
+    else:
+        pass
+
 if __name__ == "__main__":
     main()
-
-# --- EEG timeseries plot ---
-"""
-df = pd.DataFrame(np.transpose(raw_eeg))
-df = df/1000  # uV to mV
-plt.figure()
-df.plot(subplots=True)
-plt.savefig('before_processing.png')
-
-df = pd.DataFrame(np.transpose(filtered_eeg))
-df = df/1000  # uV to mV
-plt.figure()
-df.plot(subplots=True)
-plt.savefig('after_processing.png')
-"""
-
-# --- EEG PSD plot ---
-
-"""
-# create the info structure needed by MNE
-info = mne.create_info(channel_names, samp_freq, ch_types='eeg')
-# create Raw object
-raw = mne.io.RawArray(filtered_eeg, info)
-# plot PSD
-raw.plot_psd(fmax=samp_freq/2, average=True)
-
-# create the info structure needed by MNE
-info = mne.create_info(channel_names, samp_freq, ch_types='eeg')
-# create Raw object
-raw = mne.io.RawArray(raw_eeg, info)
-# plot PSD
-raw.plot_psd(fmax=samp_freq/2, average=True)
-"""

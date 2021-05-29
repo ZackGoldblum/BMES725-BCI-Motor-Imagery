@@ -55,7 +55,7 @@ def create_data(data_dir):
                 eeg_data = np.loadtxt(os.path.join(mi_class_dir, filename), delimiter=',')
                 one_sec_list = to_one_sec(eeg_data, num_sec=5, samp_freq=250)
                 for i in range(len(one_sec_list)):  # for each 1 second trial
-                    one_sec_data = one_sec_list[i] # (250, 8) eeg data
+                    one_sec_data = one_sec_list[i]  # (250, 8) eeg data
                     one_sec_dataT = np.transpose(one_sec_data)  # (8, 250) eeg data
                     training_data_dict[mi_class].append(one_sec_dataT)  
 
