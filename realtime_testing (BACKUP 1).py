@@ -43,7 +43,7 @@ num_eeg_channels = len(channel_names)
 
 # --- ML model ---
 
-model_name = "93.33-acc_50-epochs_10-batchsize_1622595873.model"
+model_name = "88.89-acc_50-epochs_10-batchsize_1622249514.model"
 model_path = os.path.join("models", model_name)
 model = tf.keras.models.load_model(model_path)
 
@@ -148,9 +148,10 @@ def main():
     #print(predict_avgs)
     left_pred = predict_avgs[0]
     right_pred = predict_avgs[1]
+    none_pred = predict_avgs[2]
 
     print(f"\nActual MI class\n---------------\n{session_class.title()}\n")
-    print(f"Predicted MI class\n------------------\nLeft:  {left_pred} %\nRight: {right_pred} %\n")
+    print(f"Predicted MI class\n------------------\nLeft:  {left_pred} %\nRight: {right_pred} %\nNone:  {none_pred} %\n")
 
     df = pd.DataFrame(np.transpose(filtered_eeg))
     df = df/1000  # uV to mV

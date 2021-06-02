@@ -10,6 +10,7 @@ import brainflow
 from brainflow.board_shim import BrainFlowInputParams, BoardShim
 from brainflow.data_filter import DataFilter
 import tensorflow as tf
+from datetime import datetime
 
 # --- Session setup ---
 
@@ -140,7 +141,9 @@ def main():
         one_sec_dataT = np.transpose(one_sec_data)  # (8, 250) eeg data  
         
         eeg_predict = one_sec_dataT.reshape(1, 8, 250)
-        predict_vec = model.predict(eeg_predict)[0]             
+        before = datetime.now()
+        predict_vec = model.predict(eeg_predict)[0]    
+        after = datetime.now()         
         predict_list.append(predict_vec)
         #print(predict_vec)
 
@@ -149,8 +152,9 @@ def main():
     left_pred = predict_avgs[0]
     right_pred = predict_avgs[1]
 
-    print(f"\nActual MI class\n---------------\n{session_class.title()}\n")
-    print(f"Predicted MI class\n------------------\nLeft:  {left_pred} %\nRight: {right_pred} %\n")
+    #print(f"\nActual MI class\n---------------\n{session_class.title()}\n")
+    print(f"\nPredicted MI class\n------------------\nLeft:  {left_pred} %\nRight: {right_pred} %\n")
+    print(f"Took {(after-before).total_seconds()} seconds to classify.\n")
 
     df = pd.DataFrame(np.transpose(filtered_eeg))
     df = df/1000  # uV to mV

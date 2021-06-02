@@ -10,14 +10,12 @@ from tensorflow.keras.layers import Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, 
 from tensorflow.keras.constraints import max_norm
 from tensorflow.keras import backend as K
 
-import matplotlib.pyplot as plt
-
 # main directory
 main_dir = os.getcwd()
 # eeg data directory
 eeg_dir = os.path.join(main_dir, "eeg_data")
 
-MI_CLASSES = ["left", "right"]
+MI_CLASSES = ["left", "right", "none"]
 
 def to_one_sec(eeg_data, total_num_sec=5, samp_freq=250):
     one_sec_data = []
@@ -46,7 +44,7 @@ def create_data(data_dir):
 
     print("Trials per class: " + str(int(len(os.listdir(mi_class_dir))/3)) + "\n")
     session_count = [len(training_data_dict[mi_class]) for mi_class in MI_CLASSES]
-    print(f"One sec trial count:\nLeft: {session_count[0]}, Right: {session_count[1]}\n")
+    print(f"One sec trial count:\nLeft: {session_count[0]}, Right: {session_count[1]}, None: {session_count[2]}\n")
 
     for mi_class in MI_CLASSES:
         np.random.shuffle(training_data_dict[mi_class])  # randomize session order
@@ -57,9 +55,11 @@ def create_data(data_dir):
     for mi_class in MI_CLASSES:
         for data in training_data_dict[mi_class]:
             if mi_class == "left":
-                labeled_data.append([data, [1, 0]])
+                labeled_data.append([data, [1, 0, 0]])
             elif mi_class == "right":
-                labeled_data.append([data, [0, 1]])
+                labeled_data.append([data, [0, 1, 0]])
+            elif mi_class == "none":
+                labeled_data.append([data, [0, 0, 1]])
 
     np.random.shuffle(labeled_data)
     
@@ -108,14 +108,14 @@ def log(x):
 def ShallowConvNet(nb_classes, Chans = 64, Samples = 128, dropoutRate = 0.5):
     # start the model
     input_main   = Input((Chans, Samples, 1))
-    block1       = Conv2D(40, (1, 25), 
+    block1       = Conv2D(40, (1, 13), 
                                  input_shape=(Chans, Samples, 1),
                                  kernel_constraint = max_norm(2., axis=(0,1,2)))(input_main)
     block1       = Conv2D(40, (Chans, 1), use_bias=False, 
                           kernel_constraint = max_norm(2., axis=(0,1,2)))(block1)
     block1       = BatchNormalization(epsilon=1e-05, momentum=0.1)(block1)
     block1       = Activation(square)(block1)
-    block1       = AveragePooling2D(pool_size=(1, 75), strides=(1, 15))(block1)
+    block1       = AveragePooling2D(pool_size=(1, 35), strides=(1, 7))(block1)
     block1       = Activation(log)(block1)
     block1       = Dropout(dropoutRate)(block1)
     flatten      = Flatten()(block1)
@@ -124,13 +124,13 @@ def ShallowConvNet(nb_classes, Chans = 64, Samples = 128, dropoutRate = 0.5):
     
     return Model(inputs=input_main, outputs=softmax)
 
-model = ShallowConvNet(nb_classes=2, Chans=8, Samples=250)
+model = ShallowConvNet(nb_classes=2, Chans=8, Samples=128)
 model.summary()
 
-model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+model.compile(loss="categorical_crossentropy", optimizer ="adam", metrics=["accuracy"])
 
-epochs = 200
-batch_size = 25
+epochs = 50
+batch_size = 10
 fitted_model = model.fit(train_X, train_y, batch_size=batch_size, epochs=50, validation_data=(validation_X, validation_y))
 
 score = model.evaluate(test_X, test_y, batch_size=batch_size)
@@ -141,27 +141,3 @@ model_name = f"models/{classification_accuracy}-acc_{epochs}-epochs_{batch_size}
 model.save(model_name)
 print("\nModel saved.")
 print(model_name)
-
-history = fitted_model 
-
-# list all data in history
-print(history.history.keys())
-# summarize history for accuracy
-plt.plot(history.history['accuracy'])
-plt.plot(history.history['loss'])
-plt.show()
-"""
-plt.title('model accuracy')
-plt.ylabel('accuracy')
-plt.xlabel('epoch')
-plt.legend(['train', 'val'], loc='upper left')
-plt.show()
-# summarize history for loss
-plt.plot(history.history['loss'])
-plt.plot(history.history['val_loss'])
-plt.title('model loss')
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train', 'val'], loc='upper left')
-plt.show()
-"""
