@@ -16,6 +16,11 @@ Ch1: F7, Ch2: C3, Ch3: F3, Ch4: P3, Ch5: P4, Ch6: F4, Ch7: C4, Ch8: F8
 - demo_realtime.py is our real-time motor imagery classification program for EEG data streamed from the OpenBCI headset. 
 - get_BCIC_raw_dt.ipynb and models_test_dt.ipynb are the Jupyter Notebook files used to evaluate the three convolutional neural networks trained on the [Brain Computer Interface Competition IV 2a dataset](http://www.bbci.de/competition/iv/). 
 
-Our motor imagery dataset is located in /eeg_data with "left" and "right" sub-directories for left-hand and right-hand motor imagery tasks. 
+## Datasets
 
-Various pre-trained models are located in the /models directory. 
+- Our motor imagery dataset is located in /eeg_data with "left" and "right" sub-directories corresponding to left-hand and right-hand motor imagery tasks.
+- The BCIC IV 2a dataset-related files are located in the /BCIC_IV_2a directory.
+
+## Models
+
+- Various pre-trained models are located in the /models directory. 
