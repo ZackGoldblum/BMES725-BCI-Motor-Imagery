@@ -9,6 +9,8 @@ Ch1: F7, Ch2: C3, Ch3: F3, Ch4: P3, Ch5: P4, Ch6: F4, Ch7: C4, Ch8: F8
 
 ![10-20_locations](https://user-images.githubusercontent.com/18644336/120905909-4e9d0380-c623-11eb-9fd7-cdaab3e2fd00.jpg)
 
+## Files
+
 - main_eeg_read.py is the general-purpose file for data acquisition, processing, and saving. 
 - model_training.py loads/formats our motor imagery dataset and trains/saves the Shallow ConvNet as a pre-trained model.
 - demo_realtime.py is our real-time motor imagery classification program for EEG data streamed from the OpenBCI headset. 
