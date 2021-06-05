@@ -57,6 +57,7 @@ def main():
         pass
 
 # --- EEG data acquisition ---
+
 def get_bci_data(num_sec):
     # prepare the board for data stream
     board.prepare_session()
@@ -83,6 +84,7 @@ def get_bci_data(num_sec):
     return all_data 
 
 # --- EEG processing ---
+
 def eeg_process(eeg_data, notch=True, hp=True):
     eeg_channel_data = []
     coeff_b, coeff_a = signal.iirnotch(w0=60, Q=30, fs=samp_freq)     # 60 Hz notch filter
@@ -92,10 +94,10 @@ def eeg_process(eeg_data, notch=True, hp=True):
     for i in range(num_eeg_channels):
         eeg_i = eeg_data[i, :]
         if notch:
-            eeg_i = signal.filtfilt(coeff_b, coeff_a, eeg_i)    # notch filter
-            eeg_i = signal.filtfilt(coeff_b2, coeff_a2, eeg_i)  # notch filter
+            eeg_i = signal.filtfilt(coeff_b, coeff_a, eeg_i)    # apply 60 Hz notch filter
+            eeg_i = signal.filtfilt(coeff_b2, coeff_a2, eeg_i)  # apply 120 Hz notch filter
         if hp:
-            eeg_i = signal.sosfilt(sos, eeg_i)  # highpass filter
+            eeg_i = signal.sosfilt(sos, eeg_i)  # apply highpass filter
         eeg_channel_data.append(eeg_i)
 
     filtered_eeg = np.asarray(eeg_channel_data)
@@ -103,6 +105,7 @@ def eeg_process(eeg_data, notch=True, hp=True):
     return filtered_eeg
 
 # --- Data saving ---
+
 def save_data(dir, all_data, raw_eeg, filtered_eeg):
     # --- Save all data ---
     initial_timestamp = all_data[timestamp_channel, 0]

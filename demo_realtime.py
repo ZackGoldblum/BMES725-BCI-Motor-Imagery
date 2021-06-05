@@ -37,7 +37,7 @@ board = BoardShim(board_id=cyton_board_ID, input_params=params)
 # board attributes
 board_name = board.get_device_name(board_id=board.board_id)
 channel_names = board.get_eeg_names(board_id=board.board_id)
-samp_freq = board.get_sampling_rate(board_id=board.board_id)  # 250 Hz
+samp_freq = board.get_sampling_rate(board_id=board.board_id)       # 250 Hz
 eeg_channel_idx = board.get_eeg_channels(board_id=board.board_id)  # EEG channel indices (1-8)
 timestamp_channel = board.get_timestamp_channel(board_id=board.board_id)
 num_eeg_channels = len(channel_names)
@@ -49,15 +49,21 @@ model_path = os.path.join("models", model_name)
 model = tf.keras.models.load_model(model_path)
 
 # --- EEG data acquisition ---
+
 def get_bci_data(num_sec):
+    """
+    Data acquisition from OpenBCI EEG headset
+    """
     # prepare the board for data stream
     board.prepare_session()
     print("\nSession ready.")
     print("--------------")
     time.sleep(1)
+
     for i in range(3):
         print(f"Session beginning in {3-i}")
         time.sleep(1)
+
     # start data stream
     board.start_stream()
     print(f"Recording {num_sec} seconds of data...")
@@ -67,6 +73,7 @@ def get_bci_data(num_sec):
 
     # get all data
     all_data = board.get_board_data() 
+
     # stop the data stream
     board.stop_stream()
     board.release_session()
@@ -75,19 +82,23 @@ def get_bci_data(num_sec):
     return all_data 
 
 # --- EEG processing ---
+
 def eeg_process(eeg_data, notch=True, hp=True):
+    """
+    Apply notch filters and/or a highpass filter to the EEG data
+    """
     eeg_channel_data = []
     coeff_b, coeff_a = signal.iirnotch(w0=60, Q=30, fs=samp_freq)     # 60 Hz notch filter
     coeff_b2, coeff_a2 = signal.iirnotch(w0=120, Q=30, fs=samp_freq)  # 120 Hz notch filter
-    sos = signal.butter(N=4, Wn=0.5, btype="highpass", analog=False, output="sos", fs=samp_freq)  # highpass filter
+    sos = signal.butter(N=4, Wn=0.5, btype="highpass", analog=False, output="sos", fs=samp_freq)  # 0.5 Hz highpass filter
 
     for i in range(num_eeg_channels):
         eeg_i = eeg_data[i, :]
         if notch:
-            eeg_i = signal.filtfilt(coeff_b, coeff_a, eeg_i)    # notch filter
-            eeg_i = signal.filtfilt(coeff_b2, coeff_a2, eeg_i)  # notch filter
+            eeg_i = signal.filtfilt(coeff_b, coeff_a, eeg_i)    # apply 60 Hz notch filter
+            eeg_i = signal.filtfilt(coeff_b2, coeff_a2, eeg_i)  # apply 120 Hz notch filter
         if hp:
-            eeg_i = signal.sosfilt(sos, eeg_i)  # highpass filter
+            eeg_i = signal.sosfilt(sos, eeg_i)  # apply highpass filter
         eeg_channel_data.append(eeg_i)
 
     filtered_eeg = np.asarray(eeg_channel_data)
@@ -95,7 +106,11 @@ def eeg_process(eeg_data, notch=True, hp=True):
     return filtered_eeg
 
 # --- Data saving ---
+
 def save_data(dir, all_data, raw_eeg, filtered_eeg):
+    """
+    Save data acquired from the OpenBCI headset
+    """
     # --- Save all data ---
     initial_timestamp = all_data[timestamp_channel, 0]
     filename = str(initial_timestamp) + '_all' + '.txt'
@@ -105,13 +120,11 @@ def save_data(dir, all_data, raw_eeg, filtered_eeg):
     print("All data saved.")
 
     # --- Save raw EEG data ---
-
     filename = str(initial_timestamp) + '_eeg' + '.txt'
     DataFilter.write_file(raw_eeg, filename, 'w')
     print("EEG data saved.")
 
     # --- Save processed EEG data ---
-
     filename = str(initial_timestamp) + '_eeg_filtered' + '.txt'
     DataFilter.write_file(filtered_eeg, filename, 'w')
     print("Filtered EEG data saved.")
@@ -119,6 +132,9 @@ def save_data(dir, all_data, raw_eeg, filtered_eeg):
     os.chdir(main_dir)
 
 def to_one_sec(eeg_data, num_sec=5, samp_freq=250):
+    """
+    Segment EEG data into one second intervals
+    """
     one_sec_data = []
     for i in range(num_sec):
         eeg_data_i = eeg_data[i*samp_freq:(i+1)*samp_freq]
@@ -127,10 +143,10 @@ def to_one_sec(eeg_data, num_sec=5, samp_freq=250):
     return one_sec_data
 
 def main():
-    num_sec = 8  # number of seconds to record
-    all_data = get_bci_data(num_sec=num_sec)
-    raw_eeg = all_data[eeg_channel_idx, 2*samp_freq:(num_sec-1)*samp_freq]  # artifactual eeg data removed, uniform size
-    filtered_eeg = eeg_process(eeg_data=raw_eeg, notch=True, hp=False)
+    num_sec = 8  # number of seconds for the recording session
+    all_data = get_bci_data(num_sec=num_sec)  # record and get data from the BCI headset
+    raw_eeg = all_data[eeg_channel_idx, 2*samp_freq:(num_sec-1)*samp_freq]  # remove first 2 seconds and last 1 second
+    filtered_eeg = eeg_process(eeg_data=raw_eeg, notch=True, hp=False)  # filter the EEG data
     filtered_eegT = np.transpose(filtered_eeg)
 
     one_sec_list = to_one_sec(eeg_data=filtered_eegT, num_sec=5, samp_freq=samp_freq)
@@ -141,9 +157,10 @@ def main():
         one_sec_dataT = np.transpose(one_sec_data)  # (8, 250) eeg data  
         
         eeg_predict = one_sec_dataT.reshape(1, 8, 250)
-        before = datetime.now()
-        predict_vec = model.predict(eeg_predict)[0]    
-        after = datetime.now()         
+        before = datetime.now()  # timestamp before classification
+        predict_vec = model.predict(eeg_predict)[0]  # predict MI classes    
+        after = datetime.now()  # timestamp after classification
+        timestamp_diff = (after-before).total_seconds()  # num secs for classification    
         predict_list.append(predict_vec)
         #print(predict_vec)
 
@@ -154,7 +171,7 @@ def main():
 
     #print(f"\nActual MI class\n---------------\n{session_class.title()}\n")
     print(f"\nPredicted MI class\n------------------\nLeft:  {left_pred} %\nRight: {right_pred} %\n")
-    print(f"Took {(after-before).total_seconds()} seconds to classify.\n")
+    print(f"Took {timestamp_diff} seconds to classify.\n")
 
     df = pd.DataFrame(np.transpose(filtered_eeg))
     df = df/1000  # uV to mV
